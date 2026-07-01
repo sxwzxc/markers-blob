@@ -1,311 +1,1326 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>@edgeone/pages-blob</title>
+  <title>云盘 · Cloud Drive</title>
+  <meta name="description" content="基于 EdgeOne Pages Blob 的简易云盘" />
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
-      --ink: #020101;
-      --on-primary: #ffffff;
-      --body: #666;
-      --mute: #999;
-      --hairline: #eaeaea;
-      --canvas: #fff;
-      --canvas-soft: #fafafa;
-      --link: #0070f3;
+      --bg: #f5f6f8;
+      --surface: #ffffff;
+      --ink: #111827;
+      --body: #4b5563;
+      --mute: #9ca3af;
+      --border: #e5e7eb;
+      --border-strong: #d1d5db;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-soft: #eff6ff;
+      --danger: #dc2626;
+      --danger-soft: #fef2f2;
+      --success: #16a34a;
+      --warning: #d97706;
+      --radius: 10px;
+      --radius-sm: 6px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-lg: 0 10px 30px rgba(0,0,0,0.12);
       --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+      --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
     }
     body {
       font-family: var(--font-sans);
+      background: var(--bg);
       color: var(--ink);
-      background: var(--canvas);
       -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
     }
-    ::selection { background: var(--ink); color: #f2f2f2; }
-    a { color: var(--link); text-decoration: none; }
-    a:hover { text-decoration: underline; }
+    button { font-family: inherit; cursor: pointer; border: none; background: none; }
+    input { font-family: inherit; }
+    a { color: var(--primary); text-decoration: none; }
 
-    /* ─── Nav ─── */
-    .nav {
-      position: sticky; top: 0; z-index: 10;
-      background: rgba(255,255,255,0.8);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--hairline);
-      height: 56px;
-      display: flex; align-items: center;
-      padding: 0 24px;
+    /* ── Auth View ── */
+    .auth-wrap {
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
-    .nav-inner {
-      max-width: 720px; width: 100%; margin: 0 auto;
-      display: flex; align-items: center; justify-content: space-between;
+    .auth-card {
+      background: var(--surface);
+      border-radius: 16px;
+      box-shadow: var(--shadow-lg);
+      width: 100%; max-width: 400px;
+      padding: 40px 32px;
     }
-    .nav-brand {
-      font-family: var(--font-mono); font-size: 14px; font-weight: 400;
-      color: var(--ink); text-decoration: none;
+    .auth-logo {
+      text-align: center; margin-bottom: 28px;
     }
-    .nav-brand:hover { text-decoration: none; }
-    .nav-right { display: flex; gap: 20px; }
-    .nav-right a {
-      font-size: 14px; color: var(--body);
-      text-decoration: none;
+    .auth-logo svg { width: 48px; height: 48px; }
+    .auth-title {
+      font-size: 22px; font-weight: 700; text-align: center;
+      margin-bottom: 6px;
     }
-    .nav-right a:hover { color: var(--ink); text-decoration: none; }
-
-    /* ─── Main ─── */
-    .main {
-      max-width: 720px; margin: 0 auto;
-      padding: 80px 24px 120px;
+    .auth-subtitle {
+      font-size: 14px; color: var(--body); text-align: center;
+      margin-bottom: 28px;
     }
-    @media (max-width: 600px) {
-      .main { padding: 48px 20px 80px; }
-    }
-
-    /* ─── Hero ─── */
-    .hero-title {
-      font-size: 40px; font-weight: 600; line-height: 1.1;
-      letter-spacing: -1.8px;
-      margin-bottom: 16px;
-    }
-    .hero-desc {
-      font-size: 16px; line-height: 1.6;
-      color: var(--body);
-      margin-bottom: 32px;
-      max-width: 520px;
-    }
-    @media (max-width: 600px) {
-      .hero-title { font-size: 28px; letter-spacing: -1px; }
-    }
-
-    /* ─── Install ─── */
-    .install {
-      display: inline-flex; align-items: center;
-      background: var(--ink); color: #e5e5e5;
-      font-family: var(--font-mono); font-size: 13px;
-      padding: 10px 16px; border-radius: 6px;
-      cursor: pointer; transition: background 0.15s;
-      margin-bottom: 48px;
-      user-select: all;
-    }
-    .install:hover { background: #333; }
-    .install .prompt { color: #666; margin-right: 8px; user-select: none; }
-
-    /* ─── Links Grid ─── */
-    .links-section {
-      margin-bottom: 56px;
-    }
-    .links-label {
-      font-family: var(--font-mono); font-size: 12px;
-      color: var(--mute); text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 16px;
-    }
-    .links-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-    @media (max-width: 480px) {
-      .links-grid { grid-template-columns: 1fr; }
-    }
-    .link-card {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 16px;
-      border: 1px solid var(--hairline);
-      border-radius: 8px;
-      text-decoration: none;
-      color: var(--ink);
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
-    .link-card:hover {
-      border-color: #ccc;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-      text-decoration: none;
-    }
-    .link-card-text {
-      display: flex; flex-direction: column; gap: 2px;
-    }
-    .link-card-title {
-      font-size: 14px; font-weight: 500;
-    }
-    .link-card-desc {
-      font-size: 13px; color: var(--body);
-    }
-    .link-card-arrow {
-      color: var(--mute); flex-shrink: 0; margin-left: 12px;
-      transition: transform 0.15s, color 0.15s;
-    }
-    .link-card:hover .link-card-arrow {
-      transform: translateX(2px); color: var(--ink);
-    }
-
-    /* ─── Code ─── */
-    .code-section { margin-bottom: 56px; }
-    .code-block {
-      background: var(--ink); color: #e5e5e5;
-      border-radius: 8px; overflow: hidden;
-    }
-    .code-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 16px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      font-family: var(--font-mono); font-size: 12px; color: #666;
-    }
-    .code-block pre {
-      padding: 16px; overflow-x: auto;
-      font-family: var(--font-mono); font-size: 13px; line-height: 1.7;
-    }
-    .kw { color: #ff7b72; }
-    .fn { color: #d2a8ff; }
-    .str { color: #a5d6ff; }
-    .cm { color: #6e7681; }
-
-    /* ─── Section title ─── */
-    .section-title {
-      font-size: 20px; font-weight: 600;
-      letter-spacing: -0.6px;
-      margin-bottom: 16px;
-    }
-    .section-desc {
-      font-size: 14px; line-height: 1.6; color: var(--body);
+    .auth-tabs {
+      display: flex; gap: 4px; background: var(--bg);
+      border-radius: var(--radius-sm); padding: 4px;
       margin-bottom: 24px;
     }
-
-    /* ─── Footer ─── */
-    .footer {
-      border-top: 1px solid var(--hairline);
-      padding: 24px;
-      text-align: center;
-      font-size: 13px; color: var(--mute);
+    .auth-tab {
+      flex: 1; padding: 9px; border-radius: 4px;
+      font-size: 14px; font-weight: 500; color: var(--body);
+      transition: all 0.15s;
     }
-    .footer a { color: var(--mute); }
-    .footer a:hover { color: var(--ink); }
+    .auth-tab.active {
+      background: var(--surface); color: var(--ink);
+      box-shadow: var(--shadow);
+    }
+    .auth-form { display: flex; flex-direction: column; gap: 16px; }
+    .auth-form.hide { display: none; }
+    .form-field { display: flex; flex-direction: column; gap: 6px; }
+    .form-label { font-size: 13px; font-weight: 500; color: var(--body); }
+    .form-input {
+      padding: 10px 12px; border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm); font-size: 14px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      outline: none;
+    }
+    .form-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+    }
+    .btn {
+      padding: 10px 16px; border-radius: var(--radius-sm);
+      font-size: 14px; font-weight: 500;
+      transition: all 0.15s;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-primary {
+      background: var(--primary); color: #fff;
+    }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-ghost {
+      background: transparent; color: var(--body);
+      border: 1px solid var(--border-strong);
+    }
+    .btn-ghost:hover { background: var(--bg); color: var(--ink); }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-block { width: 100%; }
+    .auth-error {
+      background: var(--danger-soft); color: var(--danger);
+      padding: 10px 12px; border-radius: var(--radius-sm);
+      font-size: 13px; display: none;
+    }
+    .auth-error.show { display: block; }
+    .auth-hint {
+      font-size: 12px; color: var(--mute); text-align: center;
+      margin-top: 16px; line-height: 1.6;
+    }
+
+    /* ── Drive View ── */
+    .drive { display: none; min-height: 100vh; flex-direction: column; }
+    .drive.show { display: flex; }
+
+    /* Nav */
+    .nav {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 0 24px; height: 60px;
+      display: flex; align-items: center; gap: 20px;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 17px; font-weight: 700;
+    }
+    .nav-brand svg { width: 26px; height: 26px; }
+    .nav-spacer { flex: 1; }
+    .nav-storage {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; color: var(--body);
+    }
+    .storage-bar {
+      width: 140px; height: 6px; background: var(--border);
+      border-radius: 3px; overflow: hidden;
+    }
+    .storage-fill {
+      height: 100%; background: var(--primary);
+      border-radius: 3px; transition: width 0.3s;
+    }
+    .storage-fill.warn { background: var(--warning); }
+    .storage-fill.danger { background: var(--danger); }
+    .nav-user {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 14px; font-weight: 500;
+    }
+    .avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--primary); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 600; text-transform: uppercase;
+    }
+    .btn-icon {
+      width: 36px; height: 36px; border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--body); transition: all 0.15s;
+    }
+    .btn-icon:hover { background: var(--bg); color: var(--ink); }
+    .btn-icon svg { width: 20px; height: 20px; }
+
+    /* Main */
+    .main {
+      flex: 1; max-width: 1100px; width: 100%;
+      margin: 0 auto; padding: 24px;
+    }
+
+    /* Breadcrumbs */
+    .breadcrumbs {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 14px; margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .crumb {
+      padding: 4px 8px; border-radius: var(--radius-sm);
+      color: var(--body); cursor: pointer;
+      transition: all 0.15s;
+    }
+    .crumb:hover { background: var(--bg); color: var(--ink); }
+    .crumb.current { color: var(--ink); font-weight: 500; cursor: default; }
+    .crumb.current:hover { background: none; }
+    .crumb-sep { color: var(--mute); user-select: none; }
+
+    /* Toolbar */
+    .toolbar {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .toolbar-left { display: flex; gap: 10px; align-items: center; }
+    .toolbar-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+    .search-box {
+      position: relative;
+    }
+    .search-input {
+      padding: 8px 12px 8px 34px; border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm); font-size: 13px;
+      width: 200px; outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .search-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+    }
+    .search-box svg {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      width: 16px; height: 16px; color: var(--mute);
+    }
+
+    /* File list */
+    .file-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 12px;
+    }
+    .file-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px;
+      cursor: pointer; transition: all 0.15s;
+      position: relative;
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+    }
+    .file-card:hover {
+      border-color: var(--border-strong);
+      box-shadow: var(--shadow);
+    }
+    .file-card .file-icon { width: 48px; height: 48px; }
+    .file-card .file-name {
+      font-size: 13px; font-weight: 500; text-align: center;
+      word-break: break-all; line-height: 1.4;
+      max-width: 100%;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .file-card .file-meta {
+      font-size: 11px; color: var(--mute);
+    }
+    .file-card .file-actions {
+      position: absolute; top: 8px; right: 8px;
+      display: none;
+    }
+    .file-card:hover .file-actions { display: flex; }
+    .file-action-btn {
+      width: 28px; height: 28px; border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--body); background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .file-action-btn:hover { background: var(--bg); color: var(--ink); }
+    .file-action-btn.danger:hover { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
+    .file-action-btn svg { width: 15px; height: 15px; }
+
+    /* List view */
+    .file-list-view {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .list-header {
+      display: grid; grid-template-columns: 1fr 120px 160px 80px;
+      padding: 10px 16px; background: var(--bg);
+      font-size: 12px; font-weight: 600; color: var(--body);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border);
+    }
+    .list-row {
+      display: grid; grid-template-columns: 1fr 120px 160px 80px;
+      padding: 10px 16px; align-items: center;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer; transition: background 0.1s;
+      position: relative;
+    }
+    .list-row:last-child { border-bottom: none; }
+    .list-row:hover { background: var(--bg); }
+    .list-row .list-name {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 14px; font-weight: 500;
+    }
+    .list-row .list-icon { width: 24px; height: 24px; flex-shrink: 0; }
+    .list-row .list-size, .list-row .list-date {
+      font-size: 13px; color: var(--body);
+    }
+    .list-row .list-actions {
+      display: flex; gap: 4px; opacity: 0;
+    }
+    .list-row:hover .list-actions { opacity: 1; }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center; padding: 60px 20px;
+      color: var(--mute);
+    }
+    .empty-state svg { width: 64px; height: 64px; margin-bottom: 16px; opacity: 0.4; }
+    .empty-state h3 { font-size: 16px; font-weight: 600; color: var(--body); margin-bottom: 6px; }
+    .empty-state p { font-size: 14px; }
+
+    /* Loading */
+    .loading {
+      text-align: center; padding: 40px; color: var(--mute);
+    }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Drop overlay */
+    .drop-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(37,99,235,0.1);
+      backdrop-filter: blur(2px);
+      display: none; align-items: center; justify-content: center;
+      pointer-events: none;
+    }
+    .drop-overlay.show { display: flex; }
+    .drop-box {
+      border: 3px dashed var(--primary);
+      border-radius: 16px;
+      padding: 48px 64px;
+      background: var(--surface);
+      text-align: center;
+      color: var(--primary);
+    }
+    .drop-box svg { width: 48px; height: 48px; margin-bottom: 12px; }
+    .drop-box p { font-size: 18px; font-weight: 600; }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 300;
+      background: rgba(0,0,0,0.4);
+      display: none; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--surface); border-radius: 16px;
+      box-shadow: var(--shadow-lg);
+      width: 100%; max-width: 440px;
+      max-height: 90vh; overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    .modal-header {
+      padding: 20px 24px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .modal-title { font-size: 16px; font-weight: 600; }
+    .modal-body { padding: 24px; overflow-y: auto; }
+    .modal-footer {
+      padding: 16px 24px; border-top: 1px solid var(--border);
+      display: flex; gap: 10px; justify-content: flex-end;
+    }
+    .modal-close {
+      width: 32px; height: 32px; border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--mute);
+    }
+    .modal-close:hover { background: var(--bg); color: var(--ink); }
+
+    /* Image preview */
+    .preview-modal { max-width: 900px; }
+    .preview-img {
+      max-width: 100%; max-height: 70vh; display: block; margin: 0 auto;
+      border-radius: var(--radius-sm);
+    }
+    .preview-name {
+      text-align: center; padding: 12px; font-size: 14px; color: var(--body);
+    }
+
+    /* Upload progress */
+    .upload-list { display: flex; flex-direction: column; gap: 12px; }
+    .upload-item {
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .upload-item-header {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px;
+    }
+    .upload-item-name { flex: 1; font-weight: 500; word-break: break-all; }
+    .upload-item-size { color: var(--mute); font-size: 12px; }
+    .upload-progress {
+      height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;
+    }
+    .upload-progress-fill {
+      height: 100%; background: var(--primary); border-radius: 3px;
+      transition: width 0.2s; width: 0%;
+    }
+    .upload-progress-fill.done { background: var(--success); }
+    .upload-progress-fill.error { background: var(--danger); }
+    .upload-status { font-size: 12px; color: var(--mute); }
+    .upload-status.error { color: var(--danger); }
+    .upload-status.success { color: var(--success); }
+
+    /* Toast */
+    .toast-container {
+      position: fixed; bottom: 24px; right: 24px; z-index: 400;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .toast {
+      background: var(--surface); border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-lg);
+      padding: 12px 16px; min-width: 260px; max-width: 400px;
+      display: flex; align-items: center; gap: 10px;
+      font-size: 14px;
+      animation: toastIn 0.25s ease;
+      border-left: 4px solid var(--primary);
+    }
+    .toast.success { border-left-color: var(--success); }
+    .toast.error { border-left-color: var(--danger); }
+    .toast.warning { border-left-color: var(--warning); }
+    .toast.hide { animation: toastOut 0.25s ease forwards; }
+    @keyframes toastIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes toastOut { to { transform: translateX(120%); opacity: 0; } }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .nav { padding: 0 12px; gap: 10px; }
+      .nav-storage { display: none; }
+      .main { padding: 16px 12px; }
+      .file-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+      .search-input { width: 130px; }
+      .list-header, .list-row { grid-template-columns: 1fr 80px 60px; }
+      .list-header .col-date, .list-row .list-date { display: none; }
+      .toolbar-right .search-box { display: none; }
+    }
   </style>
 </head>
 <body>
 
-  <nav class="nav">
-    <div class="nav-inner">
-      <a href="#" class="nav-brand">@edgeone/pages-blob</a>
-      <div class="nav-right">
-        <a href="https://github.com/TencentEdgeOne/pages-blob-template" target="_blank">GitHub</a>
-        <a href="https://www.npmjs.com/package/@edgeone/pages-blob" target="_blank">npm</a>
+  <!-- ═══ Auth View ═══ -->
+  <div id="authView" class="auth-wrap">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+        </svg>
       </div>
-    </div>
-  </nav>
+      <h1 class="auth-title">云盘</h1>
+      <p class="auth-subtitle">基于 EdgeOne Blob 的简易云存储</p>
 
-  <main class="main">
-
-    <!-- Hero -->
-    <h1 class="hero-title">Blob storage for EdgeOne Pages.</h1>
-    <p class="hero-desc">Persistent key-value storage SDK for EdgeOne Pages Functions. Zero config inside Pages, token mode for external access.</p>
-
-    <div class="install" onclick="navigator.clipboard.writeText('npm install @edgeone/pages-blob')" title="Click to copy">
-      <span class="prompt">$</span>npm install @edgeone/pages-blob
-    </div>
-
-    <!-- Source Code -->
-    <div class="links-section">
-      <div class="links-label">Source &amp; Template</div>
-      <div class="links-grid">
-        <a class="link-card" href="https://github.com/TencentEdgeOne/pages-blob-template" target="_blank">
-          <div class="link-card-text">
-            <span class="link-card-title">Template Repo</span>
-            <span class="link-card-desc">Full example with Edge &amp; Node functions</span>
-          </div>
-          <svg class="link-card-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </a>
-        <a class="link-card" href="https://www.npmjs.com/package/@edgeone/pages-blob" target="_blank">
-          <div class="link-card-text">
-            <span class="link-card-title">npm Package</span>
-            <span class="link-card-desc">@edgeone/pages-blob</span>
-          </div>
-          <svg class="link-card-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </a>
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-tab="login" onclick="switchAuthTab('login')">登录</button>
+        <button class="auth-tab" data-tab="register" onclick="switchAuthTab('register')">注册</button>
       </div>
-    </div>
 
-    <!-- Live Test Endpoints -->
-    <div class="links-section">
-      <div class="links-label">Live Demo Endpoints</div>
-      <div class="links-grid">
-        <a class="link-card" href="https://pages-blob.edgeone.site/edge-app" target="_blank">
-          <div class="link-card-text">
-            <span class="link-card-title">Edge Functions</span>
-            <span class="link-card-desc">/edge-app &mdash; visit counter</span>
-          </div>
-          <svg class="link-card-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </a>
-        <a class="link-card" href="https://pages-blob.edgeone.site/node-app" target="_blank">
-          <div class="link-card-text">
-            <span class="link-card-title">Node Functions</span>
-            <span class="link-card-desc">/node-app &mdash; visitor info</span>
-          </div>
-          <svg class="link-card-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </a>
-        <a class="link-card" href="https://pages-blob.edgeone.site/edge-app/api/users" target="_blank">
-          <div class="link-card-text">
-            <span class="link-card-title">Edge CRUD API</span>
-            <span class="link-card-desc">/edge-app/api/users</span>
-          </div>
-          <svg class="link-card-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </a>
-        <a class="link-card" href="https://pages-blob.edgeone.site/node-app/api/users" target="_blank">
-          <div class="link-card-text">
-            <span class="link-card-title">Node CRUD API</span>
-            <span class="link-card-desc">/node-app/api/users</span>
-          </div>
-          <svg class="link-card-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </a>
-      </div>
-    </div>
+      <div id="authError" class="auth-error"></div>
 
-    <!-- Quick Example -->
-    <div class="code-section">
-      <h2 class="section-title">Quick example.</h2>
-      <p class="section-desc">Inside Pages Functions, just import and use. No tokens needed.</p>
-      <div class="code-block">
-        <div class="code-header">
-          <span>functions/index.js</span>
+      <form id="loginForm" class="auth-form" onsubmit="handleLogin(event)">
+        <div class="form-field">
+          <label class="form-label">用户名</label>
+          <input type="text" id="loginUsername" class="form-input" placeholder="3-32 位字母数字" autocomplete="username" required />
         </div>
-        <pre><code><span class="kw">import</span> { getStore } <span class="kw">from</span> <span class="str">"@edgeone/pages-blob"</span>;
+        <div class="form-field">
+          <label class="form-label">密码</label>
+          <input type="password" id="loginPassword" class="form-input" placeholder="6-64 位" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="loginBtn">登录</button>
+      </form>
 
-<span class="kw">const</span> store = <span class="fn">getStore</span>(<span class="str">"my-store"</span>);
+      <form id="registerForm" class="auth-form hide" onsubmit="handleRegister(event)">
+        <div class="form-field">
+          <label class="form-label">用户名</label>
+          <input type="text" id="regUsername" class="form-input" placeholder="3-32 位字母、数字、_、-" autocomplete="username" required />
+        </div>
+        <div class="form-field">
+          <label class="form-label">密码</label>
+          <input type="password" id="regPassword" class="form-input" placeholder="至少 6 位" autocomplete="new-password" required />
+        </div>
+        <div class="form-field">
+          <label class="form-label">确认密码</label>
+          <input type="password" id="regPassword2" class="form-input" placeholder="再次输入密码" autocomplete="new-password" required />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="registerBtn">注册</button>
+      </form>
 
-<span class="cm">// Write</span>
-<span class="kw">await</span> store.<span class="fn">set</span>(<span class="str">"key"</span>, <span class="str">"value"</span>);
-<span class="kw">await</span> store.<span class="fn">setJSON</span>(<span class="str">"config"</span>, { theme: <span class="str">"dark"</span> });
+      <p class="auth-hint">数据存储于 EdgeOne Pages Blob，每人配额 500MB。</p>
+    </div>
+  </div>
 
-<span class="cm">// Read</span>
-<span class="kw">const</span> text = <span class="kw">await</span> store.<span class="fn">get</span>(<span class="str">"key"</span>);
-<span class="kw">const</span> json = <span class="kw">await</span> store.<span class="fn">get</span>(<span class="str">"config"</span>, { type: <span class="str">"json"</span> });
-
-<span class="cm">// Delete</span>
-<span class="kw">await</span> store.<span class="fn">delete</span>(<span class="str">"key"</span>);
-
-<span class="cm">// List</span>
-<span class="kw">const</span> { blobs } = <span class="kw">await</span> store.<span class="fn">list</span>({ prefix: <span class="str">"users/"</span> });</code></pre>
+  <!-- ═══ Drive View ═══ -->
+  <div id="driveView" class="drive">
+    <nav class="nav">
+      <div class="nav-brand">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26">
+          <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+        </svg>
+        <span>云盘</span>
       </div>
+      <div class="nav-spacer"></div>
+      <div class="nav-storage">
+        <span id="storageText">0 B / 500 MB</span>
+        <div class="storage-bar"><div id="storageFill" class="storage-fill" style="width:0%"></div></div>
+      </div>
+      <div class="nav-user">
+        <div id="userAvatar" class="avatar">U</div>
+        <span id="navUsername">user</span>
+      </div>
+      <button class="btn-icon" onclick="handleLogout()" title="退出登录">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
+    </nav>
+
+    <div class="main">
+      <div class="breadcrumbs" id="breadcrumbs"></div>
+
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <button class="btn btn-primary" onclick="triggerUpload()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            上传
+          </button>
+          <button class="btn btn-ghost" onclick="showNewFolderModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>
+            </svg>
+            新建文件夹
+          </button>
+        </div>
+        <div class="toolbar-right">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" id="searchInput" class="search-input" placeholder="搜索当前目录..." oninput="handleSearch(event)" />
+          </div>
+          <button class="btn-icon" id="viewToggle" onclick="toggleView()" title="切换视图">
+            <svg id="viewIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="fileContainer"></div>
     </div>
+  </div>
 
-    <!-- Deploy -->
-    <div class="links-section">
-      <div class="links-label">Deploy</div>
-      <a href="https://edgeone.ai/pages/new?template=pages-blob" target="_blank">
-        <img src="https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg" alt="Deploy with EdgeOne Pages" height="36" />
-      </a>
+  <!-- ═══ Drop overlay ═══ -->
+  <div id="dropOverlay" class="drop-overlay">
+    <div class="drop-box">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <p>松开鼠标上传文件</p>
     </div>
+  </div>
 
-  </main>
+  <!-- ═══ Modal ═══ -->
+  <div id="modalOverlay" class="modal-overlay" onclick="closeModalOnOverlay(event)">
+    <div class="modal" id="modalContent"></div>
+  </div>
 
-  <footer class="footer">
-    MIT &middot;
-    <a href="https://github.com/TencentEdgeOne/pages-blob-template" target="_blank">GitHub</a> &middot;
-    <a href="https://edgeone.ai/pages/templates" target="_blank">More Templates</a>
-  </footer>
+  <!-- ═══ Toast ═══ -->
+  <div id="toastContainer" class="toast-container"></div>
 
+  <!-- Hidden file input -->
+  <input type="file" id="fileInput" multiple style="display:none" onchange="handleFileSelect(event)" />
+
+  <script>
+    // ═══ State ═══
+    const API = '/api';
+    let token = localStorage.getItem('cd_token');
+    let user = null;
+    let currentPath = '/';
+    let items = [];
+    let viewMode = localStorage.getItem('cd_view') || 'grid';
+    let stats = { storageUsed: 0, quota: 500 * 1024 * 1024, fileCount: 0 };
+    let searchQuery = '';
+
+    // ═══ API helper ═══
+    async function api(path, options = {}) {
+      const headers = { ...options.headers };
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      if (options.body && typeof options.body === 'string') {
+        headers['Content-Type'] = 'application/json';
+      }
+      const resp = await fetch(API + path, { ...options, headers });
+      if (resp.status === 401) {
+        handleLogout();
+        throw new Error('登录已过期，请重新登录');
+      }
+      return resp;
+    }
+
+    // ═══ Auth ═══
+    function switchAuthTab(tab) {
+      document.querySelectorAll('.auth-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+      document.getElementById('loginForm').classList.toggle('hide', tab !== 'login');
+      document.getElementById('registerForm').classList.toggle('hide', tab !== 'register');
+      hideAuthError();
+    }
+
+    function showAuthError(msg) {
+      const el = document.getElementById('authError');
+      el.textContent = msg;
+      el.classList.add('show');
+    }
+    function hideAuthError() {
+      document.getElementById('authError').classList.remove('show');
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      hideAuthError();
+      const username = document.getElementById('loginUsername').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      const btn = document.getElementById('loginBtn');
+      btn.disabled = true; btn.textContent = '登录中...';
+      try {
+        const resp = await api('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) { showAuthError(data.error || '登录失败'); return; }
+        saveAuth(data.token, data.user);
+        enterDrive();
+      } catch (err) {
+        showAuthError(err.message);
+      } finally {
+        btn.disabled = false; btn.textContent = '登录';
+      }
+    }
+
+    async function handleRegister(e) {
+      e.preventDefault();
+      hideAuthError();
+      const username = document.getElementById('regUsername').value.trim();
+      const password = document.getElementById('regPassword').value;
+      const password2 = document.getElementById('regPassword2').value;
+      if (password !== password2) { showAuthError('两次输入的密码不一致'); return; }
+      const btn = document.getElementById('registerBtn');
+      btn.disabled = true; btn.textContent = '注册中...';
+      try {
+        const resp = await api('/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) { showAuthError(data.error || '注册失败'); return; }
+        saveAuth(data.token, data.user);
+        enterDrive();
+      } catch (err) {
+        showAuthError(err.message);
+      } finally {
+        btn.disabled = false; btn.textContent = '注册';
+      }
+    }
+
+    function saveAuth(t, u) {
+      token = t;
+      user = u;
+      localStorage.setItem('cd_token', t);
+    }
+
+    function handleLogout() {
+      token = null;
+      user = null;
+      localStorage.removeItem('cd_token');
+      document.getElementById('driveView').classList.remove('show');
+      document.getElementById('authView').style.display = 'flex';
+    }
+
+    async function checkAuth() {
+      if (!token) return false;
+      try {
+        const resp = await api('/auth/me');
+        if (!resp.ok) return false;
+        const data = await resp.json();
+        user = data.user;
+        return true;
+      } catch { return false; }
+    }
+
+    async function enterDrive() {
+      document.getElementById('authView').style.display = 'none';
+      document.getElementById('driveView').classList.add('show');
+      document.getElementById('navUsername').textContent = user.username;
+      document.getElementById('userAvatar').textContent = user.username.charAt(0).toUpperCase();
+      currentPath = '/';
+      await loadFiles();
+      await loadStats();
+    }
+
+    // ═══ Files ═══
+    async function loadFiles() {
+      const container = document.getElementById('fileContainer');
+      container.innerHTML = '<div class="loading"><div class="spinner"></div>加载中...</div>';
+      try {
+        const resp = await api('/files?path=' + encodeURIComponent(currentPath));
+        if (!resp.ok) { container.innerHTML = '<div class="empty-state"><p>加载失败</p></div>'; return; }
+        const data = await resp.json();
+        items = data.items || [];
+        renderFiles();
+        renderBreadcrumbs();
+      } catch (err) {
+        container.innerHTML = '<div class="empty-state"><p>' + escapeHtml(err.message) + '</p></div>';
+      }
+    }
+
+    async function loadStats() {
+      try {
+        const resp = await api('/user/stats');
+        if (!resp.ok) return;
+        stats = await resp.json();
+        renderStats();
+      } catch {}
+    }
+
+    function renderStats() {
+      const used = stats.storageUsed || 0;
+      const quota = stats.quota || 500 * 1024 * 1024;
+      const pct = Math.min(100, (used / quota) * 100);
+      const fill = document.getElementById('storageFill');
+      fill.style.width = pct + '%';
+      fill.className = 'storage-fill' + (pct > 90 ? ' danger' : pct > 75 ? ' warn' : '');
+      document.getElementById('storageText').textContent = formatBytes(used) + ' / ' + formatBytes(quota);
+    }
+
+    function renderBreadcrumbs() {
+      const el = document.getElementById('breadcrumbs');
+      const parts = currentPath.split('/').filter(Boolean);
+      let html = '<span class="crumb' + (parts.length === 0 ? ' current' : '') + '" data-path="/" onclick="breadcrumbClick(this)">全部文件</span>';
+      let path = '';
+      for (let i = 0; i < parts.length; i++) {
+        path += '/' + parts[i];
+        const isLast = i === parts.length - 1;
+        html += '<span class="crumb-sep">/</span>';
+        html += '<span class="crumb' + (isLast ? ' current' : '') + '" data-path="' + escapeAttr(path + '/') + '" onclick="breadcrumbClick(this)">' + escapeHtml(parts[i]) + '</span>';
+      }
+      el.innerHTML = html;
+    }
+
+    function breadcrumbClick(el) {
+      navigateTo(el.dataset.path);
+    }
+
+    function renderFiles() {
+      const container = document.getElementById('fileContainer');
+      let filtered = items;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        filtered = items.filter(i => i.name.toLowerCase().includes(q));
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            </svg>
+            <h3>${searchQuery ? '未找到匹配的文件' : '此文件夹为空'}</h3>
+            <p>${searchQuery ? '尝试其他关键词' : '点击上方按钮上传文件或新建文件夹'}</p>
+          </div>`;
+        return;
+      }
+
+      if (viewMode === 'grid') {
+        container.innerHTML = '<div class="file-grid">' + filtered.map(renderFileCard).join('') + '</div>';
+      } else {
+        container.innerHTML = `
+          <div class="file-list-view">
+            <div class="list-header">
+              <span>名称</span><span>大小</span><span class="col-date">修改时间</span><span>操作</span>
+            </div>
+            ${filtered.map(renderFileRow).join('')}
+          </div>`;
+      }
+    }
+
+    function renderFileCard(file) {
+      const icon = getFileIcon(file);
+      const meta = file.isFolder ? `${countFolderHint(file)}` : formatBytes(file.size);
+      return `
+        <div class="file-card" onclick="onItemClick('${file.id}', ${file.isFolder})">
+          <div class="file-actions">
+            ${fileActionButtons(file)}
+          </div>
+          ${icon}
+          <div class="file-name" title="${escapeAttr(file.name)}">${escapeHtml(file.name)}</div>
+          <div class="file-meta">${meta}</div>
+        </div>`;
+    }
+
+    function renderFileRow(file) {
+      const icon = getFileIcon(file, 24);
+      const size = file.isFolder ? '—' : formatBytes(file.size);
+      const date = formatDate(file.updatedAt || file.createdAt);
+      return `
+        <div class="list-row" onclick="onItemClick('${file.id}', ${file.isFolder})">
+          <div class="list-name">${icon}<span title="${escapeAttr(file.name)}">${escapeHtml(file.name)}</span></div>
+          <div class="list-size">${size}</div>
+          <div class="list-date col-date">${date}</div>
+          <div class="list-actions" onclick="event.stopPropagation()">
+            ${fileActionButtons(file, true)}
+          </div>
+        </div>`;
+    }
+
+    function fileActionButtons(file, small) {
+      let btns = '';
+      if (!file.isFolder) {
+        btns += `<button class="file-action-btn" onclick="event.stopPropagation();downloadFile('${file.id}')" title="下载">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>`;
+      }
+      btns += `<button class="file-action-btn" onclick="event.stopPropagation();showRenameModal('${file.id}')" title="重命名">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </button>`;
+      btns += `<button class="file-action-btn danger" onclick="event.stopPropagation();showDeleteModal('${file.id}')" title="删除">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      </button>`;
+      return btns;
+    }
+
+    function countFolderHint(file) {
+      return '文件夹';
+    }
+
+    function onItemClick(id, isFolder) {
+      const file = items.find(f => f.id === id);
+      if (!file) return;
+      if (isFolder) {
+        navigateTo(file.path + file.name + '/');
+      } else {
+        // Preview images, otherwise download
+        if (isImageFile(file)) {
+          previewImage(file);
+        } else if (isTextFile(file)) {
+          previewText(file);
+        } else {
+          downloadFile(id);
+        }
+      }
+    }
+
+    function navigateTo(path) {
+      currentPath = path;
+      searchQuery = '';
+      document.getElementById('searchInput').value = '';
+      loadFiles();
+    }
+
+    // ═══ Upload ═══
+    function triggerUpload() {
+      document.getElementById('fileInput').click();
+    }
+
+    function handleFileSelect(e) {
+      const files = e.target.files;
+      if (files && files.length > 0) {
+        uploadFiles(Array.from(files));
+      }
+      e.target.value = '';
+    }
+
+    async function uploadFiles(files) {
+      showUploadModal(files);
+      for (let i = 0; i < files.length; i++) {
+        await uploadSingleFile(files[i], i);
+      }
+      await loadFiles();
+      await loadStats();
+    }
+
+    async function uploadSingleFile(file, index) {
+      const item = document.getElementById('upload-item-' + index);
+      const fill = item.querySelector('.upload-progress-fill');
+      const status = item.querySelector('.upload-status');
+      try {
+        // 1. Init
+        const initResp = await api('/files/upload-init', {
+          method: 'POST',
+          body: JSON.stringify({ name: file.name, size: file.size, type: file.type, path: currentPath }),
+        });
+        const initData = await initResp.json();
+        if (!initResp.ok) throw new Error(initData.error || '上传初始化失败');
+
+        // 2. Upload to blob via presigned URL (XHR for progress)
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', initData.uploadUrl);
+          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const pct = Math.round((e.loaded / e.total) * 100);
+              fill.style.width = pct + '%';
+              status.textContent = pct + '%';
+            }
+          };
+          xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('上传失败 (' + xhr.status + ')')));
+          xhr.onerror = () => reject(new Error('网络错误'));
+          xhr.send(file);
+        });
+
+        // 3. Complete
+        fill.style.width = '100%';
+        status.textContent = '完成中...';
+        const compResp = await api('/files/upload-complete', {
+          method: 'POST',
+          body: JSON.stringify({ fileId: initData.fileId, name: file.name, size: file.size, type: file.type, path: currentPath }),
+        });
+        const compData = await compResp.json();
+        if (!compResp.ok) throw new Error(compData.error || '上传完成失败');
+
+        fill.classList.add('done');
+        status.textContent = '上传成功';
+        status.className = 'upload-status success';
+      } catch (err) {
+        fill.classList.add('error');
+        status.textContent = err.message;
+        status.className = 'upload-status error';
+      }
+    }
+
+    function showUploadModal(files) {
+      const list = files.map((f, i) => `
+        <div class="upload-item" id="upload-item-${i}">
+          <div class="upload-item-header">
+            <span class="upload-item-name">${escapeHtml(f.name)}</span>
+            <span class="upload-item-size">${formatBytes(f.size)}</span>
+          </div>
+          <div class="upload-progress"><div class="upload-progress-fill"></div></div>
+          <div class="upload-status">等待中...</div>
+        </div>`).join('');
+      showModal(`
+        <div class="modal-header">
+          <span class="modal-title">上传文件</span>
+          <button class="modal-close" onclick="closeModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-body"><div class="upload-list">${list}</div></div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="closeModal()">关闭</button>
+        </div>`);
+    }
+
+    // ═══ Download ═══
+    async function downloadFile(id) {
+      try {
+        const resp = await api('/files/' + id + '/download');
+        if (!resp.ok) { const d = await resp.json(); throw new Error(d.error || '下载失败'); }
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = items.find(f => f.id === id)?.name || 'download';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // ═══ Preview ═══
+    async function previewImage(file) {
+      showModal(`
+        <div class="modal-header">
+          <span class="modal-title">${escapeHtml(file.name)}</span>
+          <button class="modal-close" onclick="closeModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-body" style="text-align:center;">
+          <div class="loading"><div class="spinner"></div>加载中...</div>
+        </div>`);
+      try {
+        const resp = await api('/files/' + file.id + '/download');
+        if (!resp.ok) throw new Error('预览失败');
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const modal = document.getElementById('modalContent');
+        modal.querySelector('.modal-body').innerHTML = `<img class="preview-img" src="${url}" alt="${escapeAttr(file.name)}" onload="previewImageLoaded('${url}')" />`;
+        modal._previewUrl = url;
+      } catch (err) {
+        showToast(err.message, 'error');
+        closeModal();
+      }
+    }
+
+    function previewImageLoaded(url) {
+      // optional hook
+    }
+
+    async function previewText(file) {
+      showModal(`
+        <div class="modal-header">
+          <span class="modal-title">${escapeHtml(file.name)}</span>
+          <button class="modal-close" onclick="closeModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-body"><div class="loading"><div class="spinner"></div>加载中...</div></div>`);
+      try {
+        const resp = await api('/files/' + file.id + '/download');
+        if (!resp.ok) throw new Error('预览失败');
+        const text = await resp.text();
+        const modal = document.getElementById('modalContent');
+        modal.querySelector('.modal-body').innerHTML = `<pre style="white-space:pre-wrap;word-break:break-all;font-family:var(--font-mono);font-size:13px;line-height:1.6;max-height:60vh;overflow:auto;">${escapeHtml(text)}</pre>`;
+      } catch (err) {
+        showToast(err.message, 'error');
+        closeModal();
+      }
+    }
+
+    // ═══ Folders ═══
+    function showNewFolderModal() {
+      showModal(`
+        <div class="modal-header">
+          <span class="modal-title">新建文件夹</span>
+          <button class="modal-close" onclick="closeModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-field">
+            <label class="form-label">文件夹名称</label>
+            <input type="text" id="folderNameInput" class="form-input" placeholder="输入文件夹名称" onkeydown="if(event.key==='Enter')confirmCreateFolder()" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+          <button class="btn btn-primary" onclick="confirmCreateFolder()">创建</button>
+        </div>`);
+      setTimeout(() => document.getElementById('folderNameInput')?.focus(), 50);
+    }
+
+    async function confirmCreateFolder() {
+      const name = document.getElementById('folderNameInput').value.trim();
+      if (!name) { showToast('请输入文件夹名称', 'warning'); return; }
+      try {
+        const resp = await api('/folders', {
+          method: 'POST',
+          body: JSON.stringify({ name, path: currentPath }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || '创建失败');
+        closeModal();
+        showToast('文件夹已创建', 'success');
+        await loadFiles();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // ═══ Rename ═══
+    function showRenameModal(id) {
+      const file = items.find(f => f.id === id);
+      if (!file) return;
+      showModal(`
+        <div class="modal-header">
+          <span class="modal-title">重命名</span>
+          <button class="modal-close" onclick="closeModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-field">
+            <label class="form-label">新名称</label>
+            <input type="text" id="renameInput" class="form-input" value="${escapeAttr(file.name)}" onkeydown="if(event.key==='Enter')confirmRename('${id}')" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+          <button class="btn btn-primary" onclick="confirmRename('${id}')">保存</button>
+        </div>`);
+      const input = document.getElementById('renameInput');
+      setTimeout(() => { input.focus(); input.select(); }, 50);
+    }
+
+    async function confirmRename(id) {
+      const name = document.getElementById('renameInput').value.trim();
+      if (!name) { showToast('名称不能为空', 'warning'); return; }
+      try {
+        const resp = await api('/files/' + id, {
+          method: 'PATCH',
+          body: JSON.stringify({ name }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || '重命名失败');
+        closeModal();
+        showToast('已重命名', 'success');
+        await loadFiles();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // ═══ Delete ═══
+    function showDeleteModal(id) {
+      const file = items.find(f => f.id === id);
+      if (!file) return;
+      const msg = file.isFolder ? `确认删除文件夹 "${file.name}" 及其所有内容？` : `确认删除文件 "${file.name}"？`;
+      showModal(`
+        <div class="modal-header">
+          <span class="modal-title">确认删除</span>
+          <button class="modal-close" onclick="closeModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-body"><p style="font-size:14px;line-height:1.6;">${escapeHtml(msg)}</p></div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+          <button class="btn btn-danger" onclick="confirmDelete('${id}')">删除</button>
+        </div>`);
+    }
+
+    async function confirmDelete(id) {
+      try {
+        const file = items.find(f => f.id === id);
+        const endpoint = file && file.isFolder ? '/folders/' + id : '/files/' + id;
+        const resp = await api(endpoint, { method: 'DELETE' });
+        if (!resp.ok) { const d = await resp.json(); throw new Error(d.error || '删除失败'); }
+        closeModal();
+        showToast('已删除', 'success');
+        await loadFiles();
+        await loadStats();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // ═══ Modal helpers ═══
+    function showModal(html) {
+      const modal = document.getElementById('modalContent');
+      // Clean up previous preview URL
+      if (modal._previewUrl) { URL.revokeObjectURL(modal._previewUrl); modal._previewUrl = null; }
+      modal.innerHTML = html;
+      document.getElementById('modalOverlay').classList.add('show');
+    }
+
+    function closeModal() {
+      const modal = document.getElementById('modalContent');
+      if (modal._previewUrl) { URL.revokeObjectURL(modal._previewUrl); modal._previewUrl = null; }
+      document.getElementById('modalOverlay').classList.remove('show');
+    }
+
+    function closeModalOnOverlay(e) {
+      if (e.target === document.getElementById('modalOverlay')) closeModal();
+    }
+
+    // ═══ View toggle ═══
+    function toggleView() {
+      viewMode = viewMode === 'grid' ? 'list' : 'grid';
+      localStorage.setItem('cd_view', viewMode);
+      updateViewIcon();
+      renderFiles();
+    }
+
+    function updateViewIcon() {
+      const icon = document.getElementById('viewIcon');
+      if (viewMode === 'grid') {
+        icon.innerHTML = '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>';
+      } else {
+        icon.innerHTML = '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>';
+      }
+    }
+
+    // ═══ Search ═══
+    function handleSearch(e) {
+      searchQuery = e.target.value;
+      renderFiles();
+    }
+
+    // ═══ Drag & Drop ═══
+    let dragCounter = 0;
+    document.addEventListener('dragenter', (e) => {
+      if (e.dataTransfer.types.includes('Files')) {
+        dragCounter++;
+        document.getElementById('dropOverlay').classList.add('show');
+      }
+    });
+    document.addEventListener('dragleave', () => {
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        document.getElementById('dropOverlay').classList.remove('show');
+      }
+    });
+    document.addEventListener('dragover', (e) => e.preventDefault());
+    document.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      document.getElementById('dropOverlay').classList.remove('show');
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        uploadFiles(Array.from(e.dataTransfer.files));
+      }
+    });
+
+    // ═══ Toast ═══
+    function showToast(msg, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = 'toast ' + type;
+      const iconMap = {
+        success: '<svg viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" width="18" height="18"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+        error: '<svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+        warning: '<svg viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" width="18" height="18"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+        info: '<svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+      };
+      toast.innerHTML = (iconMap[type] || '') + '<span>' + escapeHtml(msg) + '</span>';
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.add('hide');
+        setTimeout(() => toast.remove(), 250);
+      }, 3500);
+    }
+
+    // ═══ File icons ═══
+    function getFileIcon(file, size) {
+      size = size || 48;
+      if (file.isFolder) {
+        return `<svg class="file-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="#2563eb"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>`;
+      }
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      const type = file.type || '';
+      let color = '#6b7280';
+      let path = '<path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6z"/><path d="M14 2v6h6" fill="none" stroke="white" stroke-width="1.5"/>';
+
+      if (isImageType(type, ext)) { color = '#8b5cf6'; }
+      else if (isVideoType(type, ext)) { color = '#ec4899'; }
+      else if (isAudioType(type, ext)) { color = '#f59e0b'; }
+      else if (ext === 'pdf') { color = '#dc2626'; }
+      else if (['doc', 'docx'].includes(ext)) { color = '#2563eb'; }
+      else if (['xls', 'xlsx'].includes(ext)) { color = '#16a34a'; }
+      else if (['ppt', 'pptx'].includes(ext)) { color = '#ea580c'; }
+      else if (['zip', 'rar', '7z', 'gz', 'tar'].includes(ext)) { color = '#7c3aed'; }
+      else if (['js', 'ts', 'py', 'java', 'c', 'cpp', 'go', 'rs', 'rb', 'php', 'html', 'css', 'json', 'xml', 'sh'].includes(ext)) { color = '#0891b2'; }
+      else if (isTextType(type, ext)) { color = '#6b7280'; }
+
+      return `<svg class="file-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${color}">${path}</svg>`;
+    }
+
+    function isImageFile(file) {
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      return isImageType(file.type || '', ext);
+    }
+    function isTextFile(file) {
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      return isTextType(file.type || '', ext) && (file.size || 0) < 2 * 1024 * 1024;
+    }
+    function isImageType(type, ext) {
+      return type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext);
+    }
+    function isVideoType(type, ext) {
+      return type.startsWith('video/') || ['mp4', 'webm', 'avi', 'mov', 'mkv', 'flv'].includes(ext);
+    }
+    function isAudioType(type, ext) {
+      return type.startsWith('audio/') || ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a'].includes(ext);
+    }
+    function isTextType(type, ext) {
+      return type.startsWith('text/') || ['txt', 'md', 'log', 'js', 'ts', 'py', 'java', 'c', 'cpp', 'go', 'rs', 'rb', 'php', 'html', 'css', 'json', 'xml', 'sh', 'yml', 'yaml', 'toml', 'ini', 'conf'].includes(ext);
+    }
+
+    // ═══ Utils ═══
+    function formatBytes(bytes) {
+      if (!bytes || bytes <= 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      const now = new Date();
+      const diff = (now - d) / 1000;
+      if (diff < 60) return '刚刚';
+      if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+      if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+      if (diff < 604800) return Math.floor(diff / 86400) + ' 天前';
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const h = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      return `${y}-${m}-${day} ${h}:${min}`;
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str || '';
+      return div.innerHTML;
+    }
+    function escapeAttr(str) {
+      return (str || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // ═══ Init ═══
+    (async function init() {
+      updateViewIcon();
+      if (token) {
+        const ok = await checkAuth();
+        if (ok) {
+          await enterDrive();
+        } else {
+          handleLogout();
+        }
+      }
+    })();
+  </script>
 </body>
 </html>

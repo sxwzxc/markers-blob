@@ -1,17 +1,16 @@
 {
-  "name": "pages-blob-example",
+  "name": "edgeone-blob-cloud-drive",
   "version": "1.0.0",
-  "description": "Example project demonstrating @edgeone/pages-blob usage with Edge Functions and Cloud Functions on EdgeOne Pages",
+  "description": "A simple cloud drive built on EdgeOne Pages Blob storage — user auth, file upload/download, folders, and storage quota.",
   "type": "module",
   "license": "MIT",
   "keywords": [
     "edgeone",
     "pages",
     "blob",
+    "cloud-drive",
     "edge-functions",
-    "cloud-functions",
-    "serverless",
-    "example"
+    "serverless"
   ],
   "dependencies": {
     "@edgeone/pages-blob": "latest"
