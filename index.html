@@ -427,6 +427,31 @@
     @keyframes toastIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
     @keyframes toastOut { to { transform: translateX(120%); opacity: 0; } }
 
+    /* ── Admin View ── */
+    .admin-view { display: none; min-height: 100vh; flex-direction: column; }
+    .admin-view.show { display: flex; }
+    .admin-main { flex: 1; max-width: 1100px; width: 100%; margin: 0 auto; padding: 24px; }
+    .admin-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+    .admin-section-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .stat-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 8px; }
+    .stat-card { background: var(--bg); border-radius: var(--radius); padding: 20px; }
+    .stat-card .stat-label { font-size: 12px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .stat-card .stat-value { font-size: 24px; font-weight: 700; }
+    .admin-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .admin-table th { text-align: left; padding: 10px 12px; background: var(--bg); font-size: 12px; font-weight: 600; color: var(--body); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+    .admin-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    .admin-table tr:last-child td { border-bottom: none; }
+    .admin-table tr:hover td { background: var(--bg); }
+    .admin-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: var(--primary-soft); color: var(--primary); }
+    .admin-badge.admin { background: #fef3c7; color: #92400e; }
+    .config-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+    .config-row label { width: 180px; font-size: 14px; font-weight: 500; color: var(--body); flex-shrink: 0; }
+    .config-row input, .config-row select { flex: 1; padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font-size: 14px; outline: none; }
+    .config-row input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+    .config-hint { font-size: 12px; color: var(--mute); margin-left: 192px; margin-top: -8px; margin-bottom: 14px; }
+    .nav-admin-btn { display: none; }
+    .nav-admin-btn.show { display: inline-flex; }
+
     /* Responsive */
     @media (max-width: 640px) {
       .nav { padding: 0 12px; gap: 10px; }
@@ -502,6 +527,11 @@
         <span>云盘</span>
       </div>
       <div class="nav-spacer"></div>
+      <button class="btn-icon nav-admin-btn" id="navAdminBtn" onclick="showAdminView()" title="管理后台">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      </button>
       <div class="nav-storage">
         <span id="storageText">0 B / 500 MB</span>
         <div class="storage-bar"><div id="storageFill" class="storage-fill" style="width:0%"></div></div>
@@ -554,6 +584,67 @@
     </div>
   </div>
 
+  <!-- ═══ Admin View ═══ -->
+  <div id="adminView" class="admin-view">
+    <nav class="nav">
+      <div class="nav-brand">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        <span>管理后台</span>
+      </div>
+      <div class="nav-spacer"></div>
+      <button class="btn btn-ghost" onclick="hideAdminView()" style="font-size:13px;padding:8px 14px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+        返回云盘
+      </button>
+      <button class="btn-icon" onclick="handleLogout()" title="退出登录">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </nav>
+    <div class="admin-main">
+      <div class="admin-section">
+        <div class="admin-section-title">系统概览</div>
+        <div class="stat-cards" id="adminStatCards">
+          <div class="stat-card"><div class="stat-label">用户数</div><div class="stat-value" id="adminUserCount">—</div></div>
+          <div class="stat-card"><div class="stat-label">总存储</div><div class="stat-value" id="adminTotalStorage">—</div></div>
+          <div class="stat-card"><div class="stat-label">文件数</div><div class="stat-value" id="adminTotalFiles">—</div></div>
+          <div class="stat-card"><div class="stat-label">管理员</div><div class="stat-value" id="adminAdminCount">—</div></div>
+        </div>
+      </div>
+      <div class="admin-section">
+        <div class="admin-section-title">用户管理</div>
+        <div style="overflow-x:auto;">
+          <table class="admin-table" id="adminUserTable">
+            <thead><tr><th>用户名</th><th>角色</th><th>存储用量</th><th>文件数</th><th>注册时间</th><th>操作</th></tr></thead>
+            <tbody id="adminUserTableBody"><tr><td colspan="6" style="text-align:center;color:var(--mute);padding:24px;">加载中...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="admin-section">
+        <div class="admin-section-title">系统配置</div>
+        <div class="config-row">
+          <label>单文件上限 (MB)</label>
+          <input type="number" id="cfgMaxFileSize" min="1" max="500" step="1" />
+        </div>
+        <div class="config-hint">单个文件的最大大小（1-500 MB）</div>
+        <div class="config-row">
+          <label>用户配额 (MB)</label>
+          <input type="number" id="cfgUserQuota" min="10" max="10240" step="10" />
+        </div>
+        <div class="config-hint">每个用户的总存储空间（10 MB - 10 GB）</div>
+        <div class="config-row">
+          <label>允许注册</label>
+          <select id="cfgAllowRegistration"><option value="true">允许</option><option value="false">禁止</option></select>
+        </div>
+        <div class="config-hint">关闭后新用户将无法注册</div>
+        <div style="margin-top:16px;">
+          <button class="btn btn-primary" onclick="saveAdminConfig()">保存配置</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══ Drop overlay ═══ -->
   <div id="dropOverlay" class="drop-overlay">
     <div class="drop-box">
@@ -580,6 +671,7 @@
     const API = '/api';
     let token = localStorage.getItem('cd_token');
     let user = null;
+    try { user = JSON.parse(localStorage.getItem('cd_user') || 'null'); } catch {}
     let currentPath = '/';
     let items = [];
     let viewMode = localStorage.getItem('cd_view') || 'grid';
@@ -593,6 +685,7 @@
       if (options.body && typeof options.body === 'string') {
         headers['Content-Type'] = 'application/json';
       }
+      // For File/Blob bodies (direct upload), let the browser set the Content-Type
       const resp = await fetch(API + path, { ...options, headers });
       if (resp.status === 401) {
         handleLogout();
@@ -670,13 +763,16 @@
       token = t;
       user = u;
       localStorage.setItem('cd_token', t);
+      localStorage.setItem('cd_user', JSON.stringify(u));
     }
 
     function handleLogout() {
       token = null;
       user = null;
       localStorage.removeItem('cd_token');
+      localStorage.removeItem('cd_user');
       document.getElementById('driveView').classList.remove('show');
+      document.getElementById('adminView').classList.remove('show');
       document.getElementById('authView').style.display = 'flex';
     }
 
@@ -687,6 +783,7 @@
         if (!resp.ok) return false;
         const data = await resp.json();
         user = data.user;
+        localStorage.setItem('cd_user', JSON.stringify(user));
         return true;
       } catch { return false; }
     }
@@ -696,6 +793,10 @@
       document.getElementById('driveView').classList.add('show');
       document.getElementById('navUsername').textContent = user.username;
       document.getElementById('userAvatar').textContent = user.username.charAt(0).toUpperCase();
+      // Show admin button if admin
+      const adminBtn = document.getElementById('navAdminBtn');
+      if (user.isAdmin) adminBtn.classList.add('show');
+      else adminBtn.classList.remove('show');
       currentPath = '/';
       await loadFiles();
       await loadStats();
@@ -893,7 +994,27 @@
           body: JSON.stringify({ name: file.name, size: file.size, type: file.type, path: currentPath }),
         });
         const initData = await initResp.json();
-        if (!initResp.ok) throw new Error(initData.error || '上传初始化失败');
+        if (!initResp.ok) throw new Error(initData.error || initData.message || '上传初始化失败');
+
+        // If server suggests direct upload or file is small, use direct upload
+        const DIRECT_LIMIT = 4 * 1024 * 1024; // 4 MB
+        if (initData.directUpload || file.size <= DIRECT_LIMIT) {
+          // Use direct upload (more reliable, no CORS/presigned URL issues)
+          status.textContent = '上传中...';
+          fill.style.width = '50%';
+          const params = new URLSearchParams({ name: file.name, path: currentPath, type: file.type || 'application/octet-stream' });
+          const directResp = await api('/files/upload-direct?' + params.toString(), {
+            method: 'POST',
+            body: file,
+          });
+          const directData = await directResp.json();
+          if (!directResp.ok) throw new Error(directData.error || directData.message || '上传失败');
+          fill.style.width = '100%';
+          fill.classList.add('done');
+          status.textContent = '上传成功';
+          status.className = 'upload-status success';
+          return;
+        }
 
         // 2. Upload to blob via presigned URL (XHR for progress)
         await new Promise((resolve, reject) => {
@@ -908,7 +1029,9 @@
             }
           };
           xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('上传失败 (' + xhr.status + ')')));
-          xhr.onerror = () => reject(new Error('网络错误'));
+          xhr.onerror = () => reject(new Error('网络错误，尝试直传...'));
+          xhr.ontimeout = () => reject(new Error('上传超时'));
+          xhr.timeout = 120000; // 2 min
           xhr.send(file);
         });
 
@@ -920,12 +1043,39 @@
           body: JSON.stringify({ fileId: initData.fileId, name: file.name, size: file.size, type: file.type, path: currentPath }),
         });
         const compData = await compResp.json();
-        if (!compResp.ok) throw new Error(compData.error || '上传完成失败');
+        if (!compResp.ok) throw new Error(compData.error || compData.message || '上传完成失败');
 
         fill.classList.add('done');
         status.textContent = '上传成功';
         status.className = 'upload-status success';
       } catch (err) {
+        // Fallback: try direct upload if presigned URL failed and file is small enough
+        if (file.size <= 4 * 1024 * 1024 && !err._directFailed) {
+          try {
+            status.textContent = '重试中（直传模式）...';
+            fill.style.width = '30%';
+            fill.classList.remove('error');
+            const params = new URLSearchParams({ name: file.name, path: currentPath, type: file.type || 'application/octet-stream' });
+            const directResp = await api('/files/upload-direct?' + params.toString(), {
+              method: 'POST',
+              body: file,
+            });
+            const directData = await directResp.json();
+            if (!directResp.ok) throw new Error(directData.error || directData.message || '直传失败');
+            fill.style.width = '100%';
+            fill.classList.add('done');
+            fill.classList.remove('error');
+            status.textContent = '上传成功';
+            status.className = 'upload-status success';
+            return;
+          } catch (retryErr) {
+            retryErr._directFailed = true;
+            fill.classList.add('error');
+            status.textContent = retryErr.message;
+            status.className = 'upload-status error';
+            return;
+          }
+        }
         fill.classList.add('error');
         status.textContent = err.message;
         status.className = 'upload-status error';
@@ -1307,6 +1457,101 @@
     }
     function escapeAttr(str) {
       return (str || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // ═══ Admin ═══
+    async function showAdminView() {
+      document.getElementById('driveView').classList.remove('show');
+      document.getElementById('adminView').classList.add('show');
+      await Promise.all([loadAdminStats(), loadAdminUsers(), loadAdminConfig()]);
+    }
+
+    function hideAdminView() {
+      document.getElementById('adminView').classList.remove('show');
+      document.getElementById('driveView').classList.add('show');
+    }
+
+    async function loadAdminStats() {
+      try {
+        const resp = await api('/admin/stats');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        document.getElementById('adminUserCount').textContent = data.userCount || 0;
+        document.getElementById('adminTotalStorage').textContent = formatBytes(data.totalStorage || 0);
+        document.getElementById('adminTotalFiles').textContent = data.totalFiles || 0;
+        document.getElementById('adminAdminCount').textContent = data.adminCount || 0;
+      } catch (err) {
+        showToast('加载统计失败: ' + err.message, 'error');
+      }
+    }
+
+    async function loadAdminUsers() {
+      const tbody = document.getElementById('adminUserTableBody');
+      try {
+        const resp = await api('/admin/users');
+        if (!resp.ok) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger);">加载失败</td></tr>'; return; }
+        const data = await resp.json();
+        const users = data.users || [];
+        if (users.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--mute);padding:24px;">暂无用户</td></tr>';
+          return;
+        }
+        tbody.innerHTML = users.map(u => `
+          <tr>
+            <td style="font-weight:500;">${escapeHtml(u.username)}</td>
+            <td><span class="admin-badge ${u.isAdmin ? 'admin' : ''}">${u.isAdmin ? '管理员' : '用户'}</span></td>
+            <td>${formatBytes(u.storageUsed || 0)}</td>
+            <td>${u.fileCount || 0}</td>
+            <td style="font-size:12px;color:var(--body);">${formatDate(u.createdAt)}</td>
+            <td>${u.isAdmin ? '<span style="color:var(--mute);font-size:12px;">—</span>' : `<button class="btn btn-danger" style="padding:4px 10px;font-size:12px;" onclick="deleteAdminUser('${u.id}','${escapeAttr(u.username)}')">删除</button>`}</td>
+          </tr>`).join('');
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger);">加载失败: ' + escapeHtml(err.message) + '</td></tr>';
+      }
+    }
+
+    async function deleteAdminUser(userId, username) {
+      if (!confirm(`确认删除用户 "${username}"？\n该用户的所有文件和数据将被永久删除。`)) return;
+      try {
+        const resp = await api('/admin/users?userId=' + encodeURIComponent(userId), { method: 'DELETE' });
+        if (!resp.ok) { const d = await resp.json(); throw new Error(d.error || '删除失败'); }
+        showToast('用户已删除', 'success');
+        await Promise.all([loadAdminStats(), loadAdminUsers()]);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function loadAdminConfig() {
+      try {
+        const resp = await api('/admin/config');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const cfg = data.config;
+        document.getElementById('cfgMaxFileSize').value = Math.round((cfg.maxFileSize || 50 * 1024 * 1024) / (1024 * 1024));
+        document.getElementById('cfgUserQuota').value = Math.round((cfg.userQuota || 500 * 1024 * 1024) / (1024 * 1024));
+        document.getElementById('cfgAllowRegistration').value = cfg.allowRegistration !== false ? 'true' : 'false';
+      } catch (err) {
+        showToast('加载配置失败: ' + err.message, 'error');
+      }
+    }
+
+    async function saveAdminConfig() {
+      const maxFileSize = parseInt(document.getElementById('cfgMaxFileSize').value) * 1024 * 1024;
+      const userQuota = parseInt(document.getElementById('cfgUserQuota').value) * 1024 * 1024;
+      const allowRegistration = document.getElementById('cfgAllowRegistration').value === 'true';
+      try {
+        const resp = await api('/admin/config', {
+          method: 'PATCH',
+          body: JSON.stringify({ maxFileSize, userQuota, allowRegistration }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || '保存失败');
+        showToast('配置已保存', 'success');
+        await loadAdminStats();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
     }
 
     // ═══ Init ═══

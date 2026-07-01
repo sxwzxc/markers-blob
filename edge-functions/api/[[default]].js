@@ -3,27 +3,35 @@
  *
  * Storage layout (blob store: "cloud-drive"):
  *   system/secret.json                    HMAC signing secret (auto-generated)
+ *   system/config.json                    Dynamic config (quota, limits, etc.)
  *   auth/usernames/{username}.json        { userId } — atomically claimed on register
- *   auth/users/{userId}.json              { id, username, passwordHash, salt, createdAt, storageUsed, fileCount }
+ *   auth/users/{userId}.json              { id, username, passwordHash, salt, createdAt, storageUsed, fileCount, isAdmin }
  *   users/{userId}/meta/{fileId}.json     file/folder metadata
  *   users/{userId}/data/{fileId}          file binary content
  *
  * Auth: bearer token = base64url(payload).base64url(hmacSHA256(payload, secret))
- * Uploads use presigned PUT URLs (browser → blob, bypasses the function body limit).
+ * Uploads: presigned PUT URL (browser → blob) with direct-upload fallback for small files.
+ * Admin: username "sxwzxc" is automatically granted admin privileges.
  */
 import { getStore } from "@edgeone/pages-blob";
 
-// ── Config ──────────────────────────────────────────────────────────────────
+// ── Defaults ────────────────────────────────────────────────────────────────
 const STORE_NAME = "cloud-drive";
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB per file
-const USER_QUOTA = 500 * 1024 * 1024; // 500 MB per user
+const DEFAULT_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB per file
+const DEFAULT_USER_QUOTA = 500 * 1024 * 1024; // 500 MB per user
 const TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const UPLOAD_URL_TTL = 3600; // seconds
+const DEFAULT_UPLOAD_URL_TTL = 3600; // seconds
+const DIRECT_UPLOAD_LIMIT = 4 * 1024 * 1024; // 4 MB — edge function body limit safety
+const CONFIG_CACHE_TTL_MS = 60_000; // 1 minute
+
+const ADMIN_USERNAMES = ["sxwzxc"];
 
 const store = getStore(STORE_NAME);
 
-// Module-level cache for the HMAC secret (avoids reading blob on every request).
+// Module-level caches
 let cachedSecret = null;
+let cachedConfig = null;
+let configLoadedAt = 0;
 
 // ── CORS ────────────────────────────────────────────────────────────────────
 const corsHeaders = {
@@ -98,22 +106,57 @@ function timingSafeEqual(a, b) {
 // ── Secret management ────────────────────────────────────────────────────────
 async function getSecret() {
   if (cachedSecret) return cachedSecret;
-  const existing = await store.get("system/secret.json", { type: "json", consistency: "strong" });
-  if (existing && existing.secret) {
-    cachedSecret = existing.secret;
-    return cachedSecret;
+  try {
+    const existing = await store.get("system/secret.json", { type: "json", consistency: "strong" });
+    if (existing && existing.secret) {
+      cachedSecret = existing.secret;
+      return cachedSecret;
+    }
+  } catch (e) {
+    // fall through to create new secret
   }
   const newSecret = b64urlEncode(randomBytes(32));
   await store.setJSON("system/secret.json", { secret: newSecret, createdAt: new Date().toISOString() }, { onlyIfNew: true });
-  // Re-read (strong) in case another instance generated the secret concurrently.
   const confirmed = await store.get("system/secret.json", { type: "json", consistency: "strong" });
   cachedSecret = confirmed && confirmed.secret ? confirmed.secret : newSecret;
   return cachedSecret;
 }
 
+// ── Config system ───────────────────────────────────────────────────────────
+async function getConfig() {
+  if (cachedConfig && Date.now() - configLoadedAt < CONFIG_CACHE_TTL_MS) return cachedConfig;
+  try {
+    const stored = await store.get("system/config.json", { type: "json" });
+    cachedConfig = {
+      maxFileSize: (stored && stored.maxFileSize) || DEFAULT_MAX_FILE_SIZE,
+      userQuota: (stored && stored.userQuota) || DEFAULT_USER_QUOTA,
+      allowRegistration: !stored || stored.allowRegistration !== false,
+      uploadUrlTtl: (stored && stored.uploadUrlTtl) || DEFAULT_UPLOAD_URL_TTL,
+    };
+  } catch {
+    cachedConfig = {
+      maxFileSize: DEFAULT_MAX_FILE_SIZE,
+      userQuota: DEFAULT_USER_QUOTA,
+      allowRegistration: true,
+      uploadUrlTtl: DEFAULT_UPLOAD_URL_TTL,
+    };
+  }
+  configLoadedAt = Date.now();
+  return cachedConfig;
+}
+
+async function saveConfig(updates) {
+  const current = await getConfig();
+  const next = { ...current, ...updates };
+  await store.setJSON("system/config.json", next);
+  cachedConfig = next;
+  configLoadedAt = Date.now();
+  return next;
+}
+
 // ── Token ────────────────────────────────────────────────────────────────────
-async function createToken(userId, username) {
-  const payload = { uid: userId, usr: username, exp: Date.now() + TOKEN_EXPIRY_MS };
+async function createToken(userId, username, isAdmin) {
+  const payload = { uid: userId, usr: username, adm: !!isAdmin, exp: Date.now() + TOKEN_EXPIRY_MS };
   const payloadB64 = b64urlEncode(new TextEncoder().encode(JSON.stringify(payload)));
   const sig = await hmacSign(payloadB64, await getSecret());
   return `${payloadB64}.${sig}`;
@@ -158,6 +201,17 @@ async function requireAuth(request) {
   return { user, error: null };
 }
 
+function isAdminUser(user) {
+  return !!user && (user.isAdmin === true || ADMIN_USERNAMES.includes(user.username.toLowerCase()));
+}
+
+async function requireAdmin(request) {
+  const { user, error } = await requireAuth(request);
+  if (error) return { user: null, error };
+  if (!isAdminUser(user)) return { user: null, error: json({ error: "需要管理员权限" }, 403) };
+  return { user, error: null };
+}
+
 async function parseJsonBody(request) {
   try {
     return await request.json();
@@ -180,8 +234,6 @@ function normalizePath(path) {
 function isValidFilename(name) {
   if (!name || typeof name !== "string") return false;
   if (name.length === 0 || name.length > 255) return false;
-  // Disallow path separators, shell metacharacters, and quotes (avoids
-  // both path traversal and JS/HTML injection in the frontend).
   if (/[\\/:*?"<>|'`]/.test(name)) return false;
   if (name.startsWith(".") && name !== ".") return false;
   if (name.trim() !== name) return false;
@@ -189,7 +241,14 @@ function isValidFilename(name) {
 }
 
 function publicUser(user) {
-  return { id: user.id, username: user.username, createdAt: user.createdAt };
+  return {
+    id: user.id,
+    username: user.username,
+    createdAt: user.createdAt,
+    isAdmin: isAdminUser(user),
+    storageUsed: user.storageUsed || 0,
+    fileCount: user.fileCount || 0,
+  };
 }
 
 function formatBytes(bytes) {
@@ -211,6 +270,9 @@ async function updateUserStorage(user, sizeDelta, countDelta) {
 
 // ── Handlers: Auth ───────────────────────────────────────────────────────────
 async function handleRegister(body) {
+  const config = await getConfig();
+  if (!config.allowRegistration) return json({ error: "注册已关闭" }, 403);
+
   const { username, password } = body || {};
   if (!username || !password) return json({ error: "用户名和密码不能为空" }, 400);
   if (!/^[a-zA-Z0-9_-]{3,32}$/.test(username))
@@ -221,7 +283,6 @@ async function handleRegister(body) {
   const lowerName = username.toLowerCase();
   const usernameKey = `auth/usernames/${lowerName}.json`;
 
-  // Check + atomic claim
   const existing = await store.get(usernameKey, { type: "json", consistency: "strong" });
   if (existing) return json({ error: "用户名已被占用" }, 409);
 
@@ -233,6 +294,7 @@ async function handleRegister(body) {
   const salt = generateSalt();
   const passwordHash = await hashPassword(password, salt);
   const now = new Date().toISOString();
+  const adminFlag = ADMIN_USERNAMES.includes(lowerName);
   const userRecord = {
     id: userId,
     username,
@@ -241,10 +303,11 @@ async function handleRegister(body) {
     createdAt: now,
     storageUsed: 0,
     fileCount: 0,
+    isAdmin: adminFlag,
   };
   await store.setJSON(`auth/users/${userId}.json`, userRecord);
 
-  const token = await createToken(userId, username);
+  const token = await createToken(userId, username, adminFlag);
   return json({ token, user: publicUser(userRecord) }, 201);
 }
 
@@ -262,12 +325,14 @@ async function handleLogin(body) {
   const hash = await hashPassword(password, user.salt);
   if (!timingSafeEqual(hash, user.passwordHash)) return json({ error: "用户名或密码错误" }, 401);
 
-  const token = await createToken(user.id, user.username);
+  const adminFlag = isAdminUser(user);
+  const token = await createToken(user.id, user.username, adminFlag);
   return json({ token, user: publicUser(user) });
 }
 
 async function handleMe(user) {
-  return json({ user: publicUser(user) });
+  const config = await getConfig();
+  return json({ user: publicUser(user), config: { maxFileSize: config.maxFileSize, userQuota: config.userQuota } });
 }
 
 // ── Handlers: Files ──────────────────────────────────────────────────────────
@@ -275,18 +340,25 @@ async function handleListFiles(user, searchParams) {
   const path = normalizePath(searchParams.get("path") || "/");
   if (path === null) return json({ error: "无效的路径" }, 400);
 
+  const search = (searchParams.get("search") || "").trim().toLowerCase();
+
   const { blobs } = await store.list({ prefix: `users/${user.id}/meta/` });
   const metas = await Promise.all(
     blobs.map((b) => store.get(b.key, { type: "json" }).catch(() => null))
   );
 
-  const items = metas
-    .filter((m) => m && m.path === path)
-    .sort((a, b) => {
-      if (a.isFolder && !b.isFolder) return -1;
-      if (!a.isFolder && b.isFolder) return 1;
-      return a.name.localeCompare(b.name, "zh-Hans");
-    });
+  let items = metas.filter((m) => m && m.path === path);
+
+  // Search mode: find across all paths
+  if (search) {
+    items = metas.filter((m) => m && typeof m.name === "string" && m.name.toLowerCase().includes(search));
+  }
+
+  items.sort((a, b) => {
+    if (a.isFolder && !b.isFolder) return -1;
+    if (!a.isFolder && b.isFolder) return 1;
+    return a.name.localeCompare(b.name, "zh-Hans");
+  });
 
   return json({ items, path });
 }
@@ -298,30 +370,38 @@ async function handleGetFile(user, fileId) {
 }
 
 async function handleUploadInit(user, body) {
+  const config = await getConfig();
   const { name, size, type, path } = body || {};
   if (!name || !isValidFilename(name)) return json({ error: "无效的文件名" }, 400);
   if (typeof size !== "number" || size <= 0) return json({ error: "无效的文件大小" }, 400);
-  if (size > MAX_FILE_SIZE)
-    return json({ error: `文件过大，单文件上限 ${formatBytes(MAX_FILE_SIZE)}` }, 413);
+  if (size > config.maxFileSize)
+    return json({ error: `文件过大，单文件上限 ${formatBytes(config.maxFileSize)}` }, 413);
 
   const folderPath = normalizePath(path);
   if (folderPath === null) return json({ error: "无效的路径" }, 400);
 
-  if ((user.storageUsed || 0) + size > USER_QUOTA) {
-    const avail = Math.max(0, USER_QUOTA - (user.storageUsed || 0));
+  if ((user.storageUsed || 0) + size > config.userQuota) {
+    const avail = Math.max(0, config.userQuota - (user.storageUsed || 0));
     return json({ error: `存储空间不足，剩余 ${formatBytes(avail)}` }, 413);
   }
 
   const fileId = generateId();
   const dataKey = `users/${user.id}/data/${fileId}`;
-  const { url, expiresAt } = await store.createUploadUrl(dataKey, {
-    expireSeconds: UPLOAD_URL_TTL,
-  });
 
-  return json({ fileId, uploadUrl: url, expiresAt, method: "PUT" });
+  let url, expiresAt;
+  try {
+    const result = await store.createUploadUrl(dataKey, { expireSeconds: config.uploadUrlTtl });
+    url = result.url;
+    expiresAt = result.expiresAt;
+  } catch (e) {
+    return json({ error: `生成上传地址失败: ${e.message || e}`, fileId, directUpload: true }, 500);
+  }
+
+  return json({ fileId, uploadUrl: url, expiresAt, method: "PUT", directUploadLimit: DIRECT_UPLOAD_LIMIT });
 }
 
 async function handleUploadComplete(user, body) {
+  const config = await getConfig();
   const { fileId, name, size, type, path } = body || {};
   if (!fileId) return json({ error: "缺少 fileId" }, 400);
   if (!name || !isValidFilename(name)) return json({ error: "无效的文件名" }, 400);
@@ -330,12 +410,17 @@ async function handleUploadComplete(user, body) {
   if (folderPath === null) return json({ error: "无效的路径" }, 400);
 
   const fileSize = typeof size === "number" && size > 0 ? size : 0;
-  if (fileSize > MAX_FILE_SIZE) return json({ error: "文件过大" }, 413);
-  if ((user.storageUsed || 0) + fileSize > USER_QUOTA) return json({ error: "存储空间不足" }, 413);
+  if (fileSize > config.maxFileSize) return json({ error: "文件过大" }, 413);
+  if ((user.storageUsed || 0) + fileSize > config.userQuota) return json({ error: "存储空间不足" }, 413);
 
   // Verify the blob was actually uploaded by the browser.
   const dataKey = `users/${user.id}/data/${fileId}`;
-  const check = await store.getWithHeaders(dataKey, { consistency: "strong" });
+  let check;
+  try {
+    check = await store.getWithHeaders(dataKey, { consistency: "strong" });
+  } catch (e) {
+    return json({ error: `验证上传数据失败: ${e.message || e}` }, 500);
+  }
   if (!check) return json({ error: "未检测到已上传的文件数据，请重试上传" }, 400);
 
   const now = new Date().toISOString();
@@ -355,11 +440,62 @@ async function handleUploadComplete(user, body) {
   return json({ file: meta }, 201);
 }
 
+/**
+ * Direct upload — accepts file body directly through the edge function.
+ * Fallback for when presigned URL upload fails (CORS, network, etc.).
+ * Limited to DIRECT_UPLOAD_LIMIT (4 MB) for edge function body safety.
+ */
+async function handleDirectUpload(user, request, searchParams) {
+  const config = await getConfig();
+  const name = searchParams.get("name") || "";
+  const path = searchParams.get("path") || "/";
+  const type = searchParams.get("type") || "application/octet-stream";
+
+  if (!name || !isValidFilename(name)) return json({ error: "无效的文件名" }, 400);
+  const folderPath = normalizePath(path);
+  if (folderPath === null) return json({ error: "无效的路径" }, 400);
+
+  const body = await request.arrayBuffer();
+  const size = body.byteLength;
+  if (size <= 0) return json({ error: "文件为空" }, 400);
+  if (size > DIRECT_UPLOAD_LIMIT) return json({ error: `直传文件上限 ${formatBytes(DIRECT_UPLOAD_LIMIT)}，请使用标准上传` }, 413);
+  if (size > config.maxFileSize) return json({ error: `文件过大，单文件上限 ${formatBytes(config.maxFileSize)}` }, 413);
+  if ((user.storageUsed || 0) + size > config.userQuota) {
+    const avail = Math.max(0, config.userQuota - (user.storageUsed || 0));
+    return json({ error: `存储空间不足，剩余 ${formatBytes(avail)}` }, 413);
+  }
+
+  const fileId = generateId();
+  const dataKey = `users/${user.id}/data/${fileId}`;
+  await store.set(dataKey, body);
+
+  const now = new Date().toISOString();
+  const meta = {
+    id: fileId,
+    name,
+    size,
+    type,
+    path: folderPath,
+    isFolder: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await store.setJSON(`users/${user.id}/meta/${fileId}.json`, meta);
+  await updateUserStorage(user, size, 1);
+
+  return json({ file: meta }, 201);
+}
+
 async function handleDownload(user, fileId) {
   const meta = await store.get(`users/${user.id}/meta/${fileId}.json`, { type: "json" });
   if (!meta || meta.isFolder) return json({ error: "文件不存在" }, 404);
 
-  const stream = await store.get(`users/${user.id}/data/${fileId}`, { type: "stream" });
+  let stream;
+  try {
+    stream = await store.get(`users/${user.id}/data/${fileId}`, { type: "stream" });
+  } catch (e) {
+    return json({ error: `读取文件失败: ${e.message || e}` }, 500);
+  }
   if (!stream) return json({ error: "文件数据不存在" }, 404);
 
   const safeName = encodeURIComponent(meta.name);
@@ -398,7 +534,6 @@ async function handleDeleteFile(user, fileId) {
   if (!meta) return json({ error: "不存在" }, 404);
 
   if (meta.isFolder) {
-    // Recursively delete the folder and all descendants.
     const folderFullPath = meta.path + meta.name + "/";
     const { blobs } = await store.list({ prefix: `users/${user.id}/meta/` });
     const allMetas = await Promise.all(
@@ -424,7 +559,6 @@ async function handleDeleteFile(user, fileId) {
     return json({ ok: true, freed: { size: sizeFreed, count: countFreed } });
   }
 
-  // Regular file
   await store.delete(`users/${user.id}/data/${fileId}`).catch(() => {});
   await store.delete(metaKey);
   await updateUserStorage(user, -(meta.size || 0), -1);
@@ -456,12 +590,121 @@ async function handleCreateFolder(user, body) {
 
 // ── Handlers: User stats ─────────────────────────────────────────────────────
 async function handleStats(user) {
+  const config = await getConfig();
   return json({
     storageUsed: user.storageUsed || 0,
     fileCount: user.fileCount || 0,
-    quota: USER_QUOTA,
-    maxFileSize: MAX_FILE_SIZE,
+    quota: config.userQuota,
+    maxFileSize: config.maxFileSize,
   });
+}
+
+// ── Handlers: Admin ──────────────────────────────────────────────────────────
+async function handleAdminStats() {
+  const config = await getConfig();
+  const { blobs: usernameBlobs } = await store.list({ prefix: "auth/usernames/" });
+  const { blobs: userBlobs } = await store.list({ prefix: "auth/users/" });
+
+  const users = await Promise.all(
+    userBlobs.map((b) => store.get(b.key, { type: "json" }).catch(() => null))
+  );
+
+  let totalStorage = 0;
+  let totalFiles = 0;
+  let adminCount = 0;
+  for (const u of users) {
+    if (!u) continue;
+    totalStorage += u.storageUsed || 0;
+    totalFiles += u.fileCount || 0;
+    if (isAdminUser(u)) adminCount++;
+  }
+
+  return json({
+    userCount: users.filter(Boolean).length,
+    totalStorage,
+    totalFiles,
+    adminCount,
+    config: {
+      maxFileSize: config.maxFileSize,
+      userQuota: config.userQuota,
+      allowRegistration: config.allowRegistration,
+      uploadUrlTtl: config.uploadUrlTtl,
+    },
+  });
+}
+
+async function handleAdminListUsers() {
+  const { blobs } = await store.list({ prefix: "auth/users/" });
+  const users = await Promise.all(
+    blobs.map((b) => store.get(b.key, { type: "json" }).catch(() => null))
+  );
+  const list = users
+    .filter(Boolean)
+    .map((u) => ({
+      id: u.id,
+      username: u.username,
+      createdAt: u.createdAt,
+      storageUsed: u.storageUsed || 0,
+      fileCount: u.fileCount || 0,
+      isAdmin: isAdminUser(u),
+    }))
+    .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+  return json({ users: list });
+}
+
+async function handleAdminDeleteUser(searchParams) {
+  const targetUserId = searchParams.get("userId");
+  if (!targetUserId) return json({ error: "缺少 userId" }, 400);
+
+  const userKey = `auth/users/${targetUserId}.json`;
+  const user = await store.get(userKey, { type: "json" });
+  if (!user) return json({ error: "用户不存在" }, 404);
+  if (isAdminUser(user)) return json({ error: "不能删除管理员账户" }, 403);
+
+  // Delete all user files
+  const { blobs: metaBlobs } = await store.list({ prefix: `users/${targetUserId}/meta/` });
+  const { blobs: dataBlobs } = await store.list({ prefix: `users/${targetUserId}/data/` });
+  await Promise.all([
+    ...metaBlobs.map((b) => store.delete(b.key).catch(() => {})),
+    ...dataBlobs.map((b) => store.delete(b.key).catch(() => {})),
+  ]);
+
+  // Delete username mapping and user record
+  await store.delete(`auth/usernames/${user.username.toLowerCase()}.json`).catch(() => {});
+  await store.delete(userKey);
+
+  return json({ ok: true, deleted: { metaCount: metaBlobs.length, dataCount: dataBlobs.length } });
+}
+
+async function handleAdminUpdateUser(body) {
+  const { userId, quota } = body || {};
+  if (!userId) return json({ error: "缺少 userId" }, 400);
+
+  const userKey = `auth/users/${userId}.json`;
+  const user = await store.get(userKey, { type: "json" });
+  if (!user) return json({ error: "用户不存在" }, 404);
+
+  if (typeof quota === "number" && quota >= 0) {
+    user.customQuota = quota;
+  }
+  await store.setJSON(userKey, user);
+  return json({ ok: true, user: publicUser(user) });
+}
+
+async function handleAdminGetConfig() {
+  const config = await getConfig();
+  return json({ config });
+}
+
+async function handleAdminUpdateConfig(body) {
+  const updates = {};
+  if (typeof body.maxFileSize === "number" && body.maxFileSize > 0) updates.maxFileSize = body.maxFileSize;
+  if (typeof body.userQuota === "number" && body.userQuota > 0) updates.userQuota = body.userQuota;
+  if (typeof body.allowRegistration === "boolean") updates.allowRegistration = body.allowRegistration;
+  if (typeof body.uploadUrlTtl === "number" && body.uploadUrlTtl > 0) updates.uploadUrlTtl = body.uploadUrlTtl;
+
+  const next = await saveConfig(updates);
+  return json({ ok: true, config: next });
 }
 
 // ── Router ───────────────────────────────────────────────────────────────────
@@ -469,7 +712,6 @@ export default async function onRequest(context) {
   const request = context.request;
   const method = request.method;
 
-  // CORS preflight
   if (method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
@@ -496,21 +738,18 @@ export default async function onRequest(context) {
     }
 
     // ── Authenticated routes ──
-    // /auth/me
     if (path === "/auth/me" && method === "GET") {
       const { user, error } = await requireAuth(request);
       if (error) return error;
       return await handleMe(user);
     }
 
-    // /files (list)
     if (path === "/files" && method === "GET") {
       const { user, error } = await requireAuth(request);
       if (error) return error;
       return await handleListFiles(user, url.searchParams);
     }
 
-    // /files/upload-init
     if (path === "/files/upload-init" && method === "POST") {
       const { user, error } = await requireAuth(request);
       if (error) return error;
@@ -519,13 +758,19 @@ export default async function onRequest(context) {
       return await handleUploadInit(user, body);
     }
 
-    // /files/upload-complete
     if (path === "/files/upload-complete" && method === "POST") {
       const { user, error } = await requireAuth(request);
       if (error) return error;
       const body = await parseJsonBody(request);
       if (!body) return json({ error: "无效的请求体" }, 400);
       return await handleUploadComplete(user, body);
+    }
+
+    // Direct upload (fallback for small files)
+    if (path === "/files/upload-direct" && method === "POST") {
+      const { user, error } = await requireAuth(request);
+      if (error) return error;
+      return await handleDirectUpload(user, request, url.searchParams);
     }
 
     // /files/:id
@@ -551,7 +796,6 @@ export default async function onRequest(context) {
       return await handleDownload(user, decodeURIComponent(dlMatch[1]));
     }
 
-    // /folders
     if (path === "/folders" && method === "POST") {
       const { user, error } = await requireAuth(request);
       if (error) return error;
@@ -560,7 +804,6 @@ export default async function onRequest(context) {
       return await handleCreateFolder(user, body);
     }
 
-    // /folders/:id (delete — recursive)
     const folderMatch = path.match(/^\/folders\/([^/]+)$/);
     if (folderMatch && method === "DELETE") {
       const { user, error } = await requireAuth(request);
@@ -568,17 +811,58 @@ export default async function onRequest(context) {
       return await handleDeleteFile(user, decodeURIComponent(folderMatch[1]));
     }
 
-    // /user/stats
     if (path === "/user/stats" && method === "GET") {
       const { user, error } = await requireAuth(request);
       if (error) return error;
       return await handleStats(user);
     }
 
+    // ── Admin routes ──
+    if (path === "/admin/stats" && method === "GET") {
+      const { user, error } = await requireAdmin(request);
+      if (error) return error;
+      return await handleAdminStats();
+    }
+
+    if (path === "/admin/users" && method === "GET") {
+      const { user, error } = await requireAdmin(request);
+      if (error) return error;
+      return await handleAdminListUsers();
+    }
+
+    if (path === "/admin/users" && method === "DELETE") {
+      const { user, error } = await requireAdmin(request);
+      if (error) return error;
+      return await handleAdminDeleteUser(url.searchParams);
+    }
+
+    if (path === "/admin/users" && method === "PATCH") {
+      const { user, error } = await requireAdmin(request);
+      if (error) return error;
+      const body = await parseJsonBody(request);
+      if (!body) return json({ error: "无效的请求体" }, 400);
+      return await handleAdminUpdateUser(body);
+    }
+
+    if (path === "/admin/config" && method === "GET") {
+      const { user, error } = await requireAdmin(request);
+      if (error) return error;
+      return await handleAdminGetConfig();
+    }
+
+    if (path === "/admin/config" && method === "PATCH") {
+      const { user, error } = await requireAdmin(request);
+      if (error) return error;
+      const body = await parseJsonBody(request);
+      if (!body) return json({ error: "无效的请求体" }, 400);
+      return await handleAdminUpdateConfig(body);
+    }
+
     // 404
     return json({ error: "Not Found", path, method }, 404);
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
-    return json({ error: "Internal Server Error", message }, 500);
+    const stack = err && err.stack ? err.stack.split("\n").slice(0, 3).join(" | ") : "";
+    return json({ error: "Internal Server Error", message, stack }, 500);
   }
 }
