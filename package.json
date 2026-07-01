@@ -1,0 +1,19 @@
+{
+  "name": "pages-blob-example",
+  "version": "1.0.0",
+  "description": "Example project demonstrating @edgeone/pages-blob usage with Edge Functions and Cloud Functions on EdgeOne Pages",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "edgeone",
+    "pages",
+    "blob",
+    "edge-functions",
+    "cloud-functions",
+    "serverless",
+    "example"
+  ],
+  "dependencies": {
+    "@edgeone/pages-blob": "latest"
+  }
+}
