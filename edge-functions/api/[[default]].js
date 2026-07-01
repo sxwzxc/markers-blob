@@ -335,6 +335,97 @@ async function handleMe(user) {
   return json({ user: publicUser(user), config: { maxFileSize: config.maxFileSize, userQuota: config.userQuota } });
 }
 
+// ── COS presigned download URL ──────────────────────────────────────────────
+// The SDK's get/getWithHeaders internally do `await response.arrayBuffer()`,
+// which reads the entire file into memory and hits the platform OverSize limit
+// for large files. To download large files, we generate a presigned GET URL
+// (same algorithm as the SDK's createUploadUrl, but for GET method) and let
+// the browser download directly from COS — no function body transfer needed.
+
+async function sha1Hex(text) {
+  const data = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest("SHA-1", data);
+  return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmacSha1Hex(keyStr, dataStr) {
+  const keyBytes = new TextEncoder().encode(keyStr);
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", keyBytes, { name: "HMAC", hash: "SHA-1" }, false, ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(dataStr));
+  return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function cosEncode(str) {
+  return encodeURIComponent(str).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
+}
+
+/**
+ * Generate a presigned GET URL for direct browser download.
+ * Accesses SDK internals (cosClient) to obtain COS credentials and domain.
+ */
+async function createDownloadUrl(storeObj, dataKey, filename, contentType, expireSeconds = 3600) {
+  const cosClient = storeObj.cosClient;
+  if (!cosClient) throw new Error("COS client not available on store instance");
+
+  const domain = await cosClient.resolveDomain("strong");
+  const cred = await cosClient.resolveCredential();
+  const cosKey = cosClient.buildCosKey(storeObj.storeName, dataKey);
+
+  // Query params — response-* overrides COS response headers (signed)
+  const disposition = `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`;
+  const queryParams = {
+    "response-content-disposition": disposition,
+    "response-content-type": contentType || "application/octet-stream",
+  };
+
+  // Build URL
+  const url = new URL(domain);
+  const encodedPath = cosKey.split("/").map((s) => cosEncode(decodeURIComponent(s))).join("/");
+  url.pathname = "/" + encodedPath;
+
+  // Sort query params for signing
+  const sortedQuery = Object.entries(queryParams)
+    .filter(([, v]) => v != null)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const queryKeysJoined = sortedQuery.map(([k]) => cosEncode(k)).join(";");
+  const queryStringJoined = sortedQuery.map(([k, v]) => `${cosEncode(k)}=${cosEncode(v)}`).join("&");
+
+  // COS signing
+  const method = "get";
+  const decodedPath = "/" + cosKey.split("/").map((s) => decodeURIComponent(s)).join("/");
+
+  const now = Math.floor(Date.now() / 1000);
+  const expire = now + expireSeconds;
+  const signTime = `${now};${expire}`;
+
+  // Sign string: method\npath\nquery\nheaders\n  (no headers for this request)
+  const signString = `${method}\n${decodedPath}\n${queryStringJoined}\n\n`;
+  const sha1OfSignString = await sha1Hex(signString);
+
+  const signKey = await hmacSha1Hex(cred.secretKey, signTime);
+  const signature = await hmacSha1Hex(signKey, `sha1\n${signTime}\n${sha1OfSignString}\n`);
+
+  // Add response-* query params to URL
+  for (const [k, v] of sortedQuery) {
+    url.searchParams.set(k, v);
+  }
+  // Add signature params
+  url.searchParams.set("q-sign-algorithm", "sha1");
+  url.searchParams.set("q-ak", cred.secretId);
+  url.searchParams.set("q-sign-time", signTime);
+  url.searchParams.set("q-key-time", signTime);
+  url.searchParams.set("q-header-list", "");
+  url.searchParams.set("q-url-param-list", queryKeysJoined);
+  url.searchParams.set("q-signature", signature);
+  if (cred.sessionToken) {
+    url.searchParams.set("x-cos-security-token", cred.sessionToken);
+  }
+
+  return url.toString();
+}
+
 // ── Handlers: Files ──────────────────────────────────────────────────────────
 async function handleListFiles(user, searchParams) {
   const path = normalizePath(searchParams.get("path") || "/");
@@ -494,23 +585,39 @@ async function handleDownload(user, fileId) {
   const meta = await store.get(`users/${user.id}/meta/${fileId}.json`, { type: "json" });
   if (!meta || meta.isFolder) return json({ error: "文件不存在" }, 404);
 
-  let stream;
+  // Generate a presigned GET URL and 302 redirect.
+  // This bypasses the edge function body size limit — the browser downloads
+  // directly from COS. The URL includes response-content-disposition so the
+  // downloaded file has the correct name.
+  const dataKey = `users/${user.id}/data/${fileId}`;
+  let downloadUrl;
   try {
-    stream = await store.get(`users/${user.id}/data/${fileId}`, { type: "stream" });
+    downloadUrl = await createDownloadUrl(
+      store, dataKey, meta.name, meta.type || "application/octet-stream", 3600
+    );
   } catch (e) {
-    return json({ error: `读取文件失败: ${e.message || e}` }, 500);
+    return json({ error: `生成下载地址失败: ${e.message || e}` }, 500);
   }
-  if (!stream) return json({ error: "文件数据不存在" }, 404);
+  return Response.redirect(downloadUrl, 302);
+}
 
-  const safeName = encodeURIComponent(meta.name);
-  const headers = {
-    "Content-Type": meta.type || "application/octet-stream",
-    "Content-Disposition": `attachment; filename="${meta.name.replace(/"/g, "_")}"; filename*=UTF-8''${safeName}`,
-    "Content-Length": String(meta.size || 0),
-    "Cache-Control": "private, no-cache",
-    ...corsHeaders,
-  };
-  return new Response(stream, { headers });
+/**
+ * Returns a presigned download URL as JSON (for frontend to use with <a> download).
+ */
+async function handleDownloadUrl(user, fileId) {
+  const meta = await store.get(`users/${user.id}/meta/${fileId}.json`, { type: "json" });
+  if (!meta || meta.isFolder) return json({ error: "文件不存在" }, 404);
+
+  const dataKey = `users/${user.id}/data/${fileId}`;
+  let downloadUrl;
+  try {
+    downloadUrl = await createDownloadUrl(
+      store, dataKey, meta.name, meta.type || "application/octet-stream", 3600
+    );
+  } catch (e) {
+    return json({ error: `生成下载地址失败: ${e.message || e}` }, 500);
+  }
+  return json({ url: downloadUrl, expiresAt: Math.floor(Date.now() / 1000) + 3600, name: meta.name, size: meta.size });
 }
 
 async function handleUpdateFile(user, fileId, body) {
@@ -798,6 +905,14 @@ export default async function onRequest(context) {
       const { user, error } = await requireAuth(request);
       if (error) return error;
       return await handleDownload(user, decodeURIComponent(dlMatch[1]));
+    }
+
+    // /files/:id/download-url
+    const dlUrlMatch = path.match(/^\/files\/([^/]+)\/download-url$/);
+    if (dlUrlMatch && method === "GET") {
+      const { user, error } = await requireAuth(request);
+      if (error) return error;
+      return await handleDownloadUrl(user, decodeURIComponent(dlUrlMatch[1]));
     }
 
     if (path === "/folders" && method === "POST") {

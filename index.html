@@ -1106,19 +1106,22 @@
     }
 
     // ═══ Download ═══
+    async function getDownloadUrl(id) {
+      const resp = await api('/files/' + id + '/download-url');
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || '获取下载地址失败');
+      return data.url;
+    }
+
     async function downloadFile(id) {
       try {
-        const resp = await api('/files/' + id + '/download');
-        if (!resp.ok) { const d = await resp.json(); throw new Error(d.error || '下载失败'); }
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
+        const url = await getDownloadUrl(id);
         const a = document.createElement('a');
         a.href = url;
         a.download = items.find(f => f.id === id)?.name || 'download';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
       } catch (err) {
         showToast(err.message, 'error');
       }
@@ -1137,20 +1140,16 @@
           <div class="loading"><div class="spinner"></div>加载中...</div>
         </div>`);
       try {
-        const resp = await api('/files/' + file.id + '/download');
-        if (!resp.ok) throw new Error('预览失败');
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
+        const url = await getDownloadUrl(file.id);
         const modal = document.getElementById('modalContent');
-        modal.querySelector('.modal-body').innerHTML = `<img class="preview-img" src="${url}" alt="${escapeAttr(file.name)}" onload="previewImageLoaded('${url}')" />`;
-        modal._previewUrl = url;
+        modal.querySelector('.modal-body').innerHTML = `<img class="preview-img" src="${escapeAttr(url)}" alt="${escapeAttr(file.name)}" onload="previewImageLoaded()" />`;
       } catch (err) {
         showToast(err.message, 'error');
         closeModal();
       }
     }
 
-    function previewImageLoaded(url) {
+    function previewImageLoaded() {
       // optional hook
     }
 
@@ -1164,7 +1163,8 @@
         </div>
         <div class="modal-body"><div class="loading"><div class="spinner"></div>加载中...</div></div>`);
       try {
-        const resp = await api('/files/' + file.id + '/download');
+        const url = await getDownloadUrl(file.id);
+        const resp = await fetch(url);
         if (!resp.ok) throw new Error('预览失败');
         const text = await resp.text();
         const modal = document.getElementById('modalContent');
