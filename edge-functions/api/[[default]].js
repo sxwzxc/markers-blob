@@ -414,14 +414,18 @@ async function handleUploadComplete(user, body) {
   if ((user.storageUsed || 0) + fileSize > config.userQuota) return json({ error: "存储空间不足" }, 413);
 
   // Verify the blob was actually uploaded by the browser.
+  // NOTE: use store.list (returns only key+etag, no body) instead of getWithHeaders,
+  // because getWithHeaders reads the entire body as a string and hits "OverSize" on
+  // large files. list with a precise prefix is cheap and safe.
   const dataKey = `users/${user.id}/data/${fileId}`;
-  let check;
+  let exists = false;
   try {
-    check = await store.getWithHeaders(dataKey, { consistency: "strong" });
+    const { blobs } = await store.list({ prefix: dataKey, consistency: "strong" });
+    exists = Array.isArray(blobs) && blobs.some((b) => b.key === dataKey);
   } catch (e) {
     return json({ error: `验证上传数据失败: ${e.message || e}` }, 500);
   }
-  if (!check) return json({ error: "未检测到已上传的文件数据，请重试上传" }, 400);
+  if (!exists) return json({ error: "未检测到已上传的文件数据，请重试上传" }, 400);
 
   const now = new Date().toISOString();
   const meta = {
